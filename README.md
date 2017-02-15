@@ -9,12 +9,14 @@ The config for the questions is setup to be as simple as adding lines to a file 
 To add a new category just start an empty file within the `sourcemod/configs/WouldYouRather`. The name of the file is the name of the category.
 
 To add questions and options to your category just follow the format of
+
 `QUESTION|OPTION1|OPTION2`
+
 The delimiter is the '|' character. If you do not have two of the delimiter characters the plugin will unload and tell you what line it is on.
 
 ## Contributing
 
-To contribute to the plugin or it's questions please see the [contribution guidelines](../master/CONTRIBUTING.md)
+To contribute to the plugin or it's questions please see the [contribution guidelines](CONTRIBUTING.md)
 
 ## Future Plans
 
