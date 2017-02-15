@@ -25,7 +25,6 @@ public Plugin myinfo = {
 public OnPluginStart() {
 	
 	engineVersion = GetEngineVersion();
-	reloadConfig();
 }
 
 public OnMapStart() {
@@ -71,11 +70,12 @@ public bool reloadConfig() {
 		}
 
 		strcopy(fileName, sizeof(fileName), fullPath);
-		ReplaceString(fileName, sizeof(fileName), directoryPath, "");
 		ReplaceString(fileName, sizeof(fileName), ".cfg", "");
 		strcopy(catName[confCategory], sizeof(catName[]), fileName); //Save the file name as the name of the category.
 		alCatQuestions[confCategory] = new ArrayList(bufferSize); // Create a reference to the next questions.
 		confDescription = true;
+		Format(fullPath, sizeof(fullPath), "%s%s", directoryPath, fullPath);
+		PrintToServer("Opening File: %s", fullPath);
 		file = OpenFile(fullPath, "r");
 		while(file.ReadLine(tempBuffer, sizeof(tempBuffer))) {
 			TrimString(tempBuffer);
