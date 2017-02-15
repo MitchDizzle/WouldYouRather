@@ -1,12 +1,11 @@
 #pragma semicolon 1
-#define DEBUG //Comment this out to disable debug prints to server console.
+//#define DEBUG //Uncomment this to enable debug prints to server console.
 
 char chatPrefix[32];
 
 #define MAX_CAT 8 //8 Categories max because there are 8 slots usable in the panel atleast for csgo.
 char catName[MAX_CAT][32];
 ArrayList alCatQuestions[MAX_CAT]; //This stores all the indices to the question, and the two options in the ArrayList below.
-
 
 ArrayList alAskingQuestions[MAXPLAYERS+1]; 	//Compiles all the indices that point to the actual questions,
 											// when a client answers it then we just erase the answered question from this list.
@@ -19,6 +18,7 @@ bool plySelectedCategories[MAXPLAYERS+1][MAX_CAT]; //Temporarily stores if the p
 ArrayList alQuestions[3];
 
 ConVar cRandom;
+ConVar cSpacer;
 
 #define PLUGIN_VERSION "1.0.0"
 public Plugin myinfo = {
@@ -32,6 +32,8 @@ public Plugin myinfo = {
 public OnPluginStart() {
 	CreateConVar("sm_wouldyourather_version", PLUGIN_VERSION, "Version of Would You Rather plugin", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
 	cRandom = CreateConVar("sm_wouldyourather_random", "1", "Randomize the order of the questions before showing the client.");
+	cSpacer = CreateConVar("sm_wouldyourather_menuspacer", "1", "0 For no menu spacer when being asked questions, 1 For menu spacers and the text 'Or...'");
+	AutoExecConfig(true, "WouldYouRather");
 
 	RegConsoleCmd("sm_wyr", Command_WouldYouRather);
 	RegConsoleCmd("sm_wouldyourather", Command_WouldYouRather);
@@ -88,9 +90,10 @@ public void showMainMenu(int client) {
 	}
 	bool hasAlreadyStarted = alAskingQuestions[client].Length > 0;
 	menu.AddItem("continue", "Continue", hasAlreadyStarted ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
-	menu.AddItem("play", "New Game\n Categories:", hasSelected ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	menu.AddItem("play", "New Game\n \nCategories:", hasSelected ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	for(int c = 0; c < MAX_CAT; c++) {
-		if(alCatQuestions[c].Length <= 0) {
+		if(alCatQuestions[c] == null || alCatQuestions[c].Length <= 0) {
+			//Either no questions inputted or doesn't exist.
 			break;
 		}
 		IntToString(c, selection, sizeof(selection));
@@ -103,6 +106,7 @@ public void showMainMenu(int client) {
 public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 	if(action == MenuAction_Select) {
 		char info[32];
+		menu.GetItem(param2, info, sizeof(info));
 		if(StrEqual(info, "play")) {
 			//Start the questions.
 			//Add question to player's list.
@@ -138,25 +142,28 @@ public void showQuestionMenu(int client, int question) {
 
 	Menu menu = new Menu(mhOption);
 	alQuestions[QUESTION].GetString(question, optionBuffer, sizeof(optionBuffer));
-	menu.SetTitle("%s", optionBuffer);
+	menu.SetTitle("%s\n ", optionBuffer);
 
 	Format(selection, sizeof(selection), "!%i", question);
 	alQuestions[OPTIONA].GetString(question, optionBuffer, sizeof(optionBuffer));
+	if(cSpacer.BoolValue) {
+		Format(optionBuffer, sizeof(optionBuffer), "%s\nOr...", optionBuffer);
+	}
 	menu.AddItem(selection, optionBuffer);
-
-	menu.AddItem("or", "Or...", ITEMDRAW_RAWLINE);
 
 	IntToString(question, selection, sizeof(selection));
 	alQuestions[OPTIONB].GetString(question, optionBuffer, sizeof(optionBuffer));
 	menu.AddItem(selection, optionBuffer);
 
 	menu.Pagination = false;
+	menu.ExitButton = true;
 	menu.Display(client, 0);
 }
 
 public int mhOption(Menu menu, MenuAction action, int client, int param2) {
 	if(action == MenuAction_Select) {
 		char info[32];
+		menu.GetItem(param2, info, sizeof(info));
 		//int selection = (StrContains(info, "!") == 0) ? 1 : 2; //Maybe used later on to show stats of this question.
 		ReplaceString(info, sizeof(info), "!", "");
 		int question = StringToInt(info);
@@ -171,6 +178,7 @@ public int mhOption(Menu menu, MenuAction action, int client, int param2) {
 	} else if(action == MenuAction_End) {
 		delete menu;
 	}
+	return 0;
 }
 
 public bool nextQuestion(int client) {
@@ -216,7 +224,11 @@ public void reloadConfig() {
 	File file;
 	FileType fileType;
 
-	BuildPath(Path_SM, directoryPath, sizeof(directoryPath), "configs/WouldYouRather/");
+	BuildPath(Path_SM, directoryPath, sizeof(directoryPath), "configs/WouldYouRather");
+	if(!DirExists(directoryPath)) {
+		SetFailState("Config folder not found: %s", directoryPath);
+	}
+
 	DirectoryListing directoryListing = OpenDirectory(directoryPath, false);
 	while(directoryListing.GetNext(fullPath, sizeof(fullPath), fileType)) {
 		if(fileType != FileType_File) {
@@ -227,8 +239,9 @@ public void reloadConfig() {
 			break;
 		}
 		strcopy(fileName, sizeof(fileName), fullPath);
-		Format(fullPath, sizeof(fullPath), "%s%s", directoryPath, fullPath);
+		Format(fullPath, sizeof(fullPath), "%s/%s", directoryPath, fullPath);
 		ReplaceString(fileName, sizeof(fileName), ".cfg", "");
+		ReplaceString(fileName, sizeof(fileName), ".txt", "");
 		strcopy(catName[confCategory], sizeof(catName[]), fileName); //Save the file name as the name of the category.
 		alCatQuestions[confCategory] = new ArrayList(); // Create a reference to the next questions.
 		
@@ -256,9 +269,12 @@ public void reloadConfig() {
 
 			alCatQuestions[confCategory].Push(quickIndex);
 		}
+		file.Close();
 		confCategory++;
 	}
-	
+	if(confCategory == 0) {
+		LogError("No categories were found or loaded, please check your config.");
+	}
 	#if defined DEBUG
 	PrintToServer("Found %i categories", confCategory);
 	PrintToServer("------------------------");
