@@ -18,6 +18,12 @@ bool plySelectedCategories[MAXPLAYERS+1][MAX_CAT]; //Temporarily stores if the p
 #define OPTIONB  2
 ArrayList alQuestions[3];
 
+//Database stuff:
+bool dbiLoaded = false;
+bool useDBI = false;
+bool useMySQL = false;
+Database dbStats;
+
 ConVar cRandom;
 ConVar cSpacer;
 
@@ -41,6 +47,8 @@ public OnPluginStart() {
 	RegConsoleCmd("sm_wyr", Command_WouldYouRather);
 	RegConsoleCmd("sm_wouldyourather", Command_WouldYouRather);
 
+	connectToDatabase();
+	
 	for(int i = 1; i <= MaxClients; i++) {
 		if(IsClientInGame(i)) {
 			OnClientPutInServer(i);
@@ -303,12 +311,92 @@ public void getChatPrefix(char[] prefix, int size) {
 	}
 }
 
-/*
-Database ideas:
-To get the amount of each answer get the count of answer==1 or answer==2 where questionId.
+public void connectToDatabase() {
+	dbiLoaded = false;
+	Database.Connect(dbConnect, "wouldyourather");
+}
 
+/*
 Tables:
-answers - accountId, questionId, answered, time
 players - accountId, name, steam64
+answers - accountId, questionId, answered, time
 questions - questionId, category, description, question, option1, option2
 */
+public void dbConnect(Database db, const char[] error, any data) {
+	if(db == null) {
+		LogMessage("Database failure: %s", error);
+	} else {
+		useDBI = true;
+		dbStats = db;
+		DBDriver driver = db.Driver;
+		char sDriver[32];
+		driver.GetIdentirifier(sDriver, sizeof(sDriver));
+		useMySQL = StrEqual(sDriver, "mysql", false);
+		
+		Transaction transaction = new Transaction();
+		if(useMySQL) {
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`));");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0);");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `questions` (`questionid` int(32) AUTO_INCREMENT, `category` varchar(64) NOT NULL, `description` varchar(128), `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL, PRIMARY KEY (`id`));");
+		} else {
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`))");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0)");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `questions` (`questionid` INTEGER PRIMARY KEY AUTOINCREMENT, `category` varchar(64) NOT NULL, `description` varchar(128), `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL);");
+		}
+		dbStats.Execute(transaction, connectOnSuccess, connectFailure);
+	}
+}
+
+public void connectOnSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+	dbiLoaded = true;
+	loadAllPlayers();
+}
+
+bool plyInDatabase[MAXPLAYERS+1];
+
+public void loadAllPlayers() {
+	Transaction transaction = new Transaction();
+	for(int i = 1; i <= MaxClients; i++) {
+		loadPlayer(i, transaction);
+	}
+	dbStats.Execute(transaction, loadPlayerOnSuccess, threadFailure);
+}
+
+public void loadPlayer(int client, Transaction trans) {
+	if(dbiLoaded != true || client <= 0 || !IsClientInGame(client)) {
+		return;
+	}
+	Transaction transaction = (trans != null) ? trans : new Transaction();
+	char sqlBuffer[256];
+	int userId = GetClientUserId(client);
+	int accountId = GetSteamAccountID(client);
+	dbStats.Format("SELECT name FROM players WHERE accountid='%i'", accountId);
+	//The player should only exist in the database if they have played the game before, otherwise why store their information?
+	if(trans == null) {
+		dbStats.Execute(transaction, loadPlayerOnSuccess, threadFailure);
+	}
+}
+
+public void loadPlayerOnSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+	int client;
+	char clientName[128];
+	for(int x = 0; x < numQueries; x++) {
+		client = GetClientOfUserId(queryData[x])
+		if(client <= 0) {
+			continue;
+		}
+		if(results[x].RowCount > 0) {
+			char tempName[128];
+			while(results[x].FetchRow()) {
+				results.FetchString(0, tempName, sizeof(tempName));
+			}
+			GetClientName(client, clientName);
+			if(!StrEqual(clientName, tempName)) {
+				//If the player already exists then update their name.
+				updatePlayerName(client, clientName);
+			}
+		}
+	}
+}
+
+
