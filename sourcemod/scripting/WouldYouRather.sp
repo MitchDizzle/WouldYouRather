@@ -7,8 +7,9 @@ char chatPrefix[32];
 char catName[MAX_CAT][32];
 ArrayList alCatQuestions[MAX_CAT]; //This stores all the indices to the question, and the two options in the ArrayList below.
 
-ArrayList alAskingQuestions[MAXPLAYERS+1]; 	//Compiles all the indices that point to the actual questions,
-											// when a client answers it then we just erase the answered question from this list.
+//Compiles all the indices that point to the actual questions, when a client answers it then we just erase the answered question from this list.
+ArrayList alAskingQuestions[MAXPLAYERS+1]; 	
+											
 bool plySelectedCategories[MAXPLAYERS+1][MAX_CAT]; //Temporarily stores if the player has selected this category.
 
 #define questionSize 64
@@ -20,7 +21,7 @@ ArrayList alQuestions[3];
 ConVar cRandom;
 ConVar cSpacer;
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.1.0"
 public Plugin myinfo = {
 	name = "Would You Rather..",
 	author = "Mitch",
@@ -30,6 +31,8 @@ public Plugin myinfo = {
 };
 
 public OnPluginStart() {
+	getChatPrefix(chatPrefix, sizeof(chatPrefix));
+
 	CreateConVar("sm_wouldyourather_version", PLUGIN_VERSION, "Version of Would You Rather plugin", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
 	cRandom = CreateConVar("sm_wouldyourather_random", "1", "Randomize the order of the questions before showing the client.");
 	cSpacer = CreateConVar("sm_wouldyourather_menuspacer", "1", "0 For no menu spacer when being asked questions, 1 For menu spacers and the text 'Or...'");
@@ -43,7 +46,6 @@ public OnPluginStart() {
 			OnClientPutInServer(i);
 		}
 	}
-	getChatPrefix(chatPrefix, sizeof(chatPrefix));
 }
 
 public OnMapStart() {
@@ -295,8 +297,18 @@ public void reloadConfig() {
 
 public void getChatPrefix(char[] prefix, int size) {
 	if(GetEngineVersion() == Engine_CSGO) {
-		Format(prefix, size, "\x08[\x0CWYR\x08]\x01");
+		Format(prefix, size, " \x08[\x0CWYR\x08]\x01");
 	} else {
 		Format(prefix, size, "\x07898989[\x07216fedWYR\x07898989]\x01");
 	}
 }
+
+/*
+Database ideas:
+To get the amount of each answer get the count of answer==1 or answer==2 where questionId.
+
+Tables:
+answers - accountId, questionId, answered, time
+players - accountId, name, steam64
+questions - questionId, category, description, question, option1, option2
+*/
