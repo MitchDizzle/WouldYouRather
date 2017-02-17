@@ -10,6 +10,7 @@ ArrayList alAskingCategories[MAXPLAYERS+1];
 ArrayList alAskingQuestions[MAXPLAYERS+1]; //Stores the client's asked question ids, compiled from all the categories.
 bool plyParsed[MAXPLAYERS+1];
 bool plyShowMainParsed[MAXPLAYERS+1];
+bool plyShowQuestionParse[MAXPLAYERS+1];
 
 //Database stuff:
 bool dbLoaded = false;
@@ -73,7 +74,7 @@ public Action Command_WouldYouRather(int client, int args) {
 		ReplyToCommand(client, "You must be ingame to use this command.");
 		return Plugin_Handled;
 	}
-	if(dbLoaded) {
+	if(!dbLoaded) {
 		//Prevent opening the menu if the database isn't even loaded.
 		ReplyToCommand(client, "Waiting on database to be loaded.");
 		return Plugin_Handled;
@@ -90,11 +91,15 @@ public Action Command_WouldYouRather(int client, int args) {
 
 
 public void showMainMenu(int client) {
-	char selection[12];
-	char description[72];
 	Menu menu = new Menu(mhMain);
+	char description[128];
 	menu.SetTitle("Would You Rather...\n ");
-	menu.AddItem("continue", "Continue", alAskingQuestions[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	int unansweredQuestions = alAskingQuestions[client].Length;
+	Format(description, sizeof(description), "Continue");
+	if(unansweredQuestions > 0) {
+		Format(description, sizeof(description), "%s (%i)", description, unansweredQuestions);
+	}
+	menu.AddItem("continue", description, unansweredQuestions > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	menu.AddItem("newgame", "New Game");
 	menu.AddItem("reset", "Reset Answered Questions");
 	menu.Display(client, 0);
@@ -106,9 +111,9 @@ public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 		menu.GetItem(param2, info, sizeof(info));
 		if(StrEqual(info, "continue")) {
 			//Continue with the next question.
-			showNextQuestion(client);
+			//showNextQuestion(client);
 		} else if(StrEqual(info, "newgame")) {
-			showPlayMenu(client);
+			showNewGameMenu(client);
 		} else {
 			//showResetMenu(client);
 		}
@@ -117,8 +122,8 @@ public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 	}
 }
 
-public void showPlayMenu(int client) {
-	Menu menu = new Menu(mhPlay);
+public void showNewGameMenu(int client) {
+	Menu menu = new Menu(mhNewGame);
 	menu.SetTitle("Would You Rather...\n ");
 	menu.AddItem("play", "Play\n \nCategories:", alAskingCategories[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	
@@ -138,24 +143,12 @@ public void showPlayMenu(int client) {
 	menu.Display(client, 0);
 }
 
-public int mhPlay(Menu menu, MenuAction action, int client, int param2) {
+public int mhNewGame(Menu menu, MenuAction action, int client, int param2) {
 	if(action == MenuAction_Select) {
 		char info[32];
 		menu.GetItem(param2, info, sizeof(info));
 		if(StrEqual(info, "play")) {
-			//Start the questions.
-			//Add question to player's list.
-			/*for(int c = 0; c < MAX_CAT; c++) {
-				if(plySelectedCategories[client][c]) {
-					for(int i = 0; i < alCatQuestions[c].Length; i++) {
-						alAskingQuestions[client].Push(alCatQuestions[c].Get(i));
-					}
-				}
-			}
-			if(!nextQuestion(client)) {
-				//The player does not have any questions to display.
-				showMainMenu(client);
-			}*/
+			newGame(client);
 		} else {
 			int selection = StringToInt(info);
 			int index = alAskingCategories[client].FindValue(selection);
@@ -164,7 +157,7 @@ public int mhPlay(Menu menu, MenuAction action, int client, int param2) {
 			} else {
 				alAskingCategories[client].Push(selection);
 			}
-			showPlayMenu(client);
+			showNewGameMenu(client);
 		}
 	} else if(action == MenuAction_Cancel) {
 		showMainMenu(client);
@@ -174,7 +167,7 @@ public int mhPlay(Menu menu, MenuAction action, int client, int param2) {
 }
 
 /*
-public void showQuestionMenu(int client, int question) {
+public void showQuestionMenu(int client, int questionid) {
 	char selection[32];
 	char optionBuffer[64];
 
@@ -268,12 +261,12 @@ public void dbConnect(Database db, const char[] error, any data) {
 		if(useMySQL) {
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`));");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0);");
-			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL);");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL, UNIQUE(`accountid`, `category`));");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `questions` (`questionid` int(32) AUTO_INCREMENT, `category` varchar(64) NOT NULL, `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL, `addedby` int(32) DEFAULT 0, PRIMARY KEY (`questionid`), UNIQUE(`category`, `question`, `option1`, `option2`));");
 		} else {
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`))");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0)");
-			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL)");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL, PRIMARY KEY (`accountid`, `category`))");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `questions` (`questionid` INTEGER PRIMARY KEY AUTOINCREMENT, `category` varchar(64) PRIMARY KEY NOT NULL, `question` varchar(64) PRIMARY KEY NOT NULL, `option1` varchar(64) PRIMARY KEY PRIMARY KEY NOT NULL, `option2` varchar(64) PRIMARY KEY NOT NULL, PRIMARY KEY (`questionid`, `category`, `question`, `option1`, `option2`));");
 		}
 		dbStats.Execute(transaction, connectOnSuccess, threadFailure);
@@ -444,6 +437,7 @@ public void parsePlayer(int client, DBResultSet result) {
 		char tempBuffer[32];
 		int index;
 		int category;
+		createArrayList(alAskingCategories[client]);
 		while(result.FetchRow()) {
 			result.FetchString(0, tempBuffer, sizeof(tempBuffer));
 			//Find the category in the category list
@@ -452,15 +446,75 @@ public void parsePlayer(int client, DBResultSet result) {
 				//Add the selected category to the player's list, if it does not already exist.
 				index = alAskingCategories[client].FindValue(category);
 				if(index == -1) {
-					alAskingCategories[client].Push(index);
+					alAskingCategories[client].Push(category);
 				}
 			}
-			alAskingQuestions[client].Push(result.FetchInt(1));
+			int tempInt = result.FetchInt(1);
+			PrintToServer("%N - %s = %i", client, tempBuffer, tempInt);
+			alAskingQuestions[client].Push(tempInt);
 		}
 	}
 	plyParsed[client] = true;
 	if(plyShowMainParsed[client]) {
 		showMainMenu(client);
+		plyShowMainParsed[client] = false;
+	}
+	if(plyShowQuestionParse[client]) {
+		//showQuestion(client);
+		plyShowQuestionParse[client] = false;
+	}
+}
+
+//Delete old categories saved under the player's list
+//Send new categories for the player's list.
+//Retrieve player's questions.
+//Retrieve next qeustionid, and request the question from questionid.
+public void newGame(int client) {
+	// Clear arrays
+	createArrayList(alAskingQuestions[client]);
+	
+	int accountId = GetSteamAccountID(client);
+	char clientName[128];
+	GetClientName(client, clientName, sizeof(clientName));
+	char steam64[64];
+	GetClientAuthId(client, AuthId_SteamID64, steam64, sizeof(steam64));
+	char sqlBuffer[128];
+	Transaction transaction = new Transaction();
+
+	dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "DELETE FROM selected WHERE accountid='%i'", accountId);
+	transaction.AddQuery(sqlBuffer, 0);
+	
+	//TODO: Safe guard against "STEAM_ID_STOP_IGNORING_RETVALS"
+	dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "INSERT %s IGNORE INTO players (accountid, name, steam64) VALUES ('%i', '%s', '%s');", useMySQL ? "" : "OR", accountId, clientName, steam64);
+	transaction.AddQuery(sqlBuffer, 0);
+	
+	int cat;
+	char category[32];
+	for(int c = 0; c < alAskingCategories[client].Length; c++) {
+		cat = alAskingCategories[client].Get(c);
+		if(cat != -1) {
+			alCategories.GetString(cat, category, sizeof(category));
+			dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "INSERT %s IGNORE INTO selected (accountid, category) VALUES ('%i', '%s');", useMySQL ? "" : "OR", accountId, category);
+			transaction.AddQuery(sqlBuffer, 0);
+		}
+	}
+	//Attempt to get the unanswered questions in the same transaction, saving time.
+	loadPlayer(client, transaction); 
+	dbStats.Execute(transaction, newGameOnSuccess, threadFailure);
+}
+
+public void newGameOnSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+	int client;
+	for(int x = 0; x < numQueries; x++) {
+		if(queryData[x] <= 0) {
+			continue;
+		}
+		client = GetClientOfUserId(queryData[x]);
+		if(client <= 0) {
+			continue;
+		}
+		plyShowQuestionParse[client] = true;
+		parsePlayer(client, results[x]);
 	}
 }
 

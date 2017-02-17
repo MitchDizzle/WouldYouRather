@@ -21,10 +21,10 @@ A List of changes between versions
 * When player connects, it will now store their previous categories and unanswered questions.
 * New main menu which shows Continue, New Game, and Reset.
 * New play menu which shows the categories and play. Pressing play will reset selected categories incase of reconnect.
+* When a player starts a new game it will find unanswered questions for the selected categories.
 
 Unfinished:
 
 * New reset menu which will allow players to reset their answers for specific categories.
-* When a player starts a new game it will find unanswered questions for the selected categories.
 * When a player answers a question store that answers
-  * Retireve the next question from their list.
+  * Retrieve the next question from their list.
