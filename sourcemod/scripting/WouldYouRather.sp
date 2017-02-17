@@ -8,10 +8,13 @@ ArrayList alCategories; //Holds the list of categories that filled with question
 #define questionSize 64
 ArrayList alAskingCategories[MAXPLAYERS+1];
 ArrayList alAskingQuestions[MAXPLAYERS+1]; //Stores the client's asked question ids, compiled from all the categories.
+bool plyParsed[MAXPLAYERS+1];
+bool plyShowMainParsed[MAXPLAYERS+1];
 
 //Database stuff:
 bool dbLoaded = false;
 bool useMySQL = false;
+bool cachedPlayers = false;
 Database dbStats;
 
 ConVar cRandom;
@@ -52,24 +55,17 @@ public void OnClientPutInServer(int client) {
 	createArrayList(alAskingQuestions[client]);
 }
 
+public void OnClientAuthorized(int client, const char[] auth) {
+	if(cachedPlayers) {
+		loadPlayer(client, null);
+	}
+}
+
 public void OnClientDisconnect(int client) {
 	deleteArrayList(alAskingCategories[client]);
 	deleteArrayList(alAskingQuestions[client]);
-}
-
-public void createArrayList(ArrayList &array) {
-	if(array == null) {
-		array = new ArrayList();
-	} else {
-		array.Clear();
-	}
-}
-
-public void deleteArrayList(ArrayList &array) {
-	if(array != null) {
-		delete array;
-		array = null;
-	}
+	plyParsed[client] = false;
+	plyShowMainParsed[client] = false;
 }
 
 public Action Command_WouldYouRather(int client, int args) {
@@ -77,7 +73,18 @@ public Action Command_WouldYouRather(int client, int args) {
 		ReplyToCommand(client, "You must be ingame to use this command.");
 		return Plugin_Handled;
 	}
-	showMainMenu(client);
+	if(dbLoaded) {
+		//Prevent opening the menu if the database isn't even loaded.
+		ReplyToCommand(client, "Waiting on database to be loaded.");
+		return Plugin_Handled;
+	}
+	if(!plyParsed[client]) {
+		//Not sure if it will ever come to this but we should make sure the player is parsed before showing the menu.
+		plyShowMainParsed[client] = true;
+		loadPlayer(client, null);
+	} else {
+		showMainMenu(client);
+	}
 	return Plugin_Handled;
 }
 
@@ -87,8 +94,7 @@ public void showMainMenu(int client) {
 	char description[72];
 	Menu menu = new Menu(mhMain);
 	menu.SetTitle("Would You Rather...\n ");
-	bool hasAlreadyStarted = false;
-	menu.AddItem("continue", "Continue", hasAlreadyStarted ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	menu.AddItem("continue", "Continue", alAskingQuestions[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	menu.AddItem("newgame", "New Game");
 	menu.AddItem("reset", "Reset Answered Questions");
 	menu.Display(client, 0);
@@ -98,29 +104,13 @@ public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 	if(action == MenuAction_Select) {
 		char info[32];
 		menu.GetItem(param2, info, sizeof(info));
-		if(StrEqual(info, "play")) {
-			//Start the questions.
-			//Add question to player's list.
-			/*for(int c = 0; c < MAX_CAT; c++) {
-				if(plySelectedCategories[client][c]) {
-					for(int i = 0; i < alCatQuestions[c].Length; i++) {
-						alAskingQuestions[client].Push(alCatQuestions[c].Get(i));
-					}
-				}
-			}
-			if(!nextQuestion(client)) {
-				//The player does not have any questions to display.
-				showMainMenu(client);
-			}*/
-		} else if(StrEqual(info, "continue")) {
+		if(StrEqual(info, "continue")) {
 			//Continue with the next question.
-			/*if(!nextQuestion(client)) {
-				showMainMenu(client); //Show the main menu if there is no next question..
-			}*/
+			showNextQuestion(client);
+		} else if(StrEqual(info, "newgame")) {
+			showPlayMenu(client);
 		} else {
-			/*int selection = StringToInt(info);
-			plySelectedCategories[client][selection] = !plySelectedCategories[client][selection];
-			showMainMenu(client);*/
+			//showResetMenu(client);
 		}
 	} else if(action == MenuAction_End) {
 		delete menu;
@@ -128,20 +118,21 @@ public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 }
 
 public void showPlayMenu(int client) {
-	char selection[12];
-	char description[72];
 	Menu menu = new Menu(mhPlay);
 	menu.SetTitle("Would You Rather...\n ");
-	menu.AddItem("play", "Play\n \nCategories:", hasSelected ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	menu.AddItem("play", "Play\n \nCategories:", alAskingCategories[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	
-	int index = -1;
 	if(alCategories != null && alCategories.Length > 0) {
+		char selection[12];
+		char description[72];
+		char category[32];
+		int index = -1;
 		for(int c = 0; c < alCategories.Length; c++) {
-			alAskingCategories.FindValue(c);
+			alCategories.GetString(c, category, sizeof(category));
+			index = alAskingCategories[client].FindValue(c);
 			IntToString(c, selection, sizeof(selection));
-			Format(description, sizeof(description), "[%s] %s", index != -1 ? "X" : " ", catName[c]);
+			Format(description, sizeof(description), "[%s] %s", index != -1 ? "X" : " ", category);
 			menu.AddItem(selection, description);
-			index = -1;
 		}
 	}
 	menu.Display(client, 0);
@@ -165,16 +156,18 @@ public int mhPlay(Menu menu, MenuAction action, int client, int param2) {
 				//The player does not have any questions to display.
 				showMainMenu(client);
 			}*/
-		} else if(StrEqual(info, "continue")) {
-			//Continue with the next question.
-			/*if(!nextQuestion(client)) {
-				showMainMenu(client); //Show the main menu if there is no next question..
-			}*/
 		} else {
-			/*int selection = StringToInt(info);
-			plySelectedCategories[client][selection] = !plySelectedCategories[client][selection];
-			showMainMenu(client);*/
+			int selection = StringToInt(info);
+			int index = alAskingCategories[client].FindValue(selection);
+			if(index > -1) {
+				alAskingCategories[client].Erase(index);
+			} else {
+				alAskingCategories[client].Push(selection);
+			}
+			showPlayMenu(client);
 		}
+	} else if(action == MenuAction_Cancel) {
+		showMainMenu(client);
 	} else if(action == MenuAction_End) {
 		delete menu;
 	}
@@ -280,6 +273,7 @@ public void dbConnect(Database db, const char[] error, any data) {
 		} else {
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`))");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0)");
+			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL)");
 			SQL_AddQuery(transaction, "CREATE TABLE IF NOT EXISTS `questions` (`questionid` INTEGER PRIMARY KEY AUTOINCREMENT, `category` varchar(64) PRIMARY KEY NOT NULL, `question` varchar(64) PRIMARY KEY NOT NULL, `option1` varchar(64) PRIMARY KEY PRIMARY KEY NOT NULL, `option2` varchar(64) PRIMARY KEY NOT NULL, PRIMARY KEY (`questionid`, `category`, `question`, `option1`, `option2`));");
 		}
 		dbStats.Execute(transaction, connectOnSuccess, threadFailure);
@@ -407,7 +401,7 @@ public void loadAllPlayers() {
 	for(int i = 1; i <= MaxClients; i++) {
 		loadPlayer(i, transaction);
 	}
-	dbStats.Execute(transaction, loadPlayerOnSuccess, threadFailure);
+	dbStats.Execute(transaction, loadAllPlayersSuccess, threadFailure);
 }
 
 public void loadPlayer(int client, Transaction trans) {
@@ -418,32 +412,69 @@ public void loadPlayer(int client, Transaction trans) {
 	char sqlBuffer[256];
 	int userId = GetClientUserId(client);
 	int accountId = GetSteamAccountID(client);
-	dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "SELECT category FROM selected WHERE accountid='%i'", accountId);
+	// TODO: test this in sqlite.
+	dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "SELECT category, questionid FROM questions WHERE category IN (SELECT category FROM selected WHERE accountid = %i) AND questionid NOT IN (SELECT questionid FROM answers WHERE accountid = %i);", accountId, accountId);
 	transaction.AddQuery(sqlBuffer, userId);
-	//The player should only exist in the database if they have played the game before, otherwise why store their information?
 	if(trans == null) {
 		dbStats.Execute(transaction, loadPlayerOnSuccess, threadFailure);
 	}
 }
 
-public void loadPlayerOnSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+public void loadAllPlayersSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
 	int client;
-	char clientName[128];
 	for(int x = 0; x < numQueries; x++) {
 		client = GetClientOfUserId(queryData[x]);
 		if(client <= 0) {
 			continue;
 		}
-		if(results[x].RowCount > 0) {
-			char tempName[128];
-			while(results[x].FetchRow()) {
-				results[x].FetchString(0, tempName, sizeof(tempName));
+		parsePlayer(client, results[x]);
+	}
+	cachedPlayers = true;
+}
+
+public void loadPlayerOnSuccess(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+	int client = GetClientOfUserId(queryData[0]);
+	if(client > 0) {
+		parsePlayer(client, results[0]);
+	}
+}
+
+public void parsePlayer(int client, DBResultSet result) {
+	if(result.RowCount > 0) {
+		char tempBuffer[32];
+		int index;
+		int category;
+		while(result.FetchRow()) {
+			result.FetchString(0, tempBuffer, sizeof(tempBuffer));
+			//Find the category in the category list
+			category = alCategories.FindString(tempBuffer);
+			if(category != -1) {
+				//Add the selected category to the player's list, if it does not already exist.
+				index = alAskingCategories[client].FindValue(category);
+				if(index == -1) {
+					alAskingCategories[client].Push(index);
+				}
 			}
-			GetClientName(client, clientName, sizeof(clientName));
-			if(!StrEqual(clientName, tempName)) {
-				//If the player already exists then update their name.
-				//updatePlayerName(client, clientName);
-			}
+			alAskingQuestions[client].Push(result.FetchInt(1));
 		}
+	}
+	plyParsed[client] = true;
+	if(plyShowMainParsed[client]) {
+		showMainMenu(client);
+	}
+}
+
+public void createArrayList(ArrayList &array) {
+	if(array == null) {
+		array = new ArrayList();
+	} else {
+		array.Clear();
+	}
+}
+
+public void deleteArrayList(ArrayList &array) {
+	if(array != null) {
+		delete array;
+		array = null;
 	}
 }
