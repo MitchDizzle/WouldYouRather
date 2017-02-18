@@ -1,15 +1,6 @@
 # WouldYouRather [Source 2013/CS:GO]
 
 A List of changes between versions
-
-## 1.0
-
-* Initial Release
-* Loading categories from config
-* Displaying menu
-  * Menu shows toggable categories
-  * Menu will show questions from all selected categories until finished.
-  * Menu will continue progress if exited prematurely.
   
 ## 1.1
 
@@ -22,9 +13,18 @@ A List of changes between versions
 * New main menu which shows Continue, New Game, and Reset.
 * New play menu which shows the categories and play. Pressing play will reset selected categories incase of reconnect.
 * When a player starts a new game it will find unanswered questions for the selected categories.
+* When a player answers a question store that answers
+  * Retrieve the next question from their list.
 
 Unfinished:
 
 * New reset menu which will allow players to reset their answers for specific categories.
-* When a player answers a question store that answers
-  * Retrieve the next question from their list.
+
+## 1.0
+
+* Initial Release
+* Loading categories from config
+* Displaying menu
+  * Menu shows toggable categories
+  * Menu will show questions from all selected categories until finished.
+  * Menu will continue progress if exited prematurely.

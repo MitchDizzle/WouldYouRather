@@ -18,6 +18,10 @@ The delimiter is the '|' character. If you do not have two of the delimiter char
 
 To contribute to the plugin or it's questions please see the [contribution guidelines](CONTRIBUTING.md)
 
+## Version Change Log
+
+Please view the corresponding [changelog](CHANGES.md)
+
 ## Future Plans
 
-I'm planning on adding a webserver (perferably java) that will communicate through Http requests. This will allow the webserver to hold the stats per player, instead of having the server save all the stats. If I do actually get around to finishing the webserver then it would be in a different destination, as I want to keep them separate.
+I'm planning on adding a webserver (preferably java) that will communicate through Http requests. This will allow the webserver to hold the stats per player, instead of having the server save all the stats. If I do actually get around to finishing the webserver then it would be in a different destination, as I want to keep them separate.
