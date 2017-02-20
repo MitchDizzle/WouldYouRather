@@ -312,9 +312,9 @@ public void dbConnect(Database db, const char[] error, any data) {
 			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `questions` (`questionid` int(32) AUTO_INCREMENT, `category` varchar(64) NOT NULL, `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL, `addedby` int(32) DEFAULT 0, PRIMARY KEY (`questionid`), UNIQUE(`category`, `question`, `option1`, `option2`));");
 		} else {
 			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) PRIMARY KEY NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL);");
-			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) UNIQUE NOT NULL, `questionid` int(32) UNIQUE NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0);");
-			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) UNIQUE NOT NULL, `category` varchar(32) UNIQUE NOT NULL);");
-			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `questions` (`questionid` INTEGER PRIMARY KEY AUTOINCREMENT, `category` varchar(64) NOT NULL, `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL);");
+			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `answers` (`accountid` int(32) NOT NULL, `questionid` int(32) NOT NULL, `answered` int(32) NOT NULL, `time` int(64) DEFAULT 0, UNIQUE(`accountid`, `questionid`) ON CONFLICT IGNORE);");
+			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `selected` (`accountid` int(32) NOT NULL, `category` varchar(32) NOT NULL, UNIQUE(`accountid`, `category`) ON CONFLICT IGNORE);");
+			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `questions` (`questionid` INTEGER PRIMARY KEY AUTOINCREMENT, `category` varchar(64) NOT NULL, `question` varchar(64) NOT NULL, `option1` varchar(64) NOT NULL, `option2` varchar(64) NOT NULL, UNIQUE(`category`, `question`, `option1`, `option2`) ON CONFLICT IGNORE);");
 		}
 		dbStats.Execute(transaction, connectOnSuccess, threadFailure);
 	}
@@ -375,12 +375,7 @@ public void loadQuestions() {
 				LogError("  line: %s", tempBuffer);
 				SetFailState("Config errors found, please revise the config (see error logs for file and line).");
 			}
-			if(useMySQL) {
-				dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "INSERT IGNORE INTO questions (category, question, option1, option2) VALUES ('%s', '%s', '%s', '%s');", fileName, splitBuffer[0], splitBuffer[1], splitBuffer[2]);
-			} else {
-				// TODO: test sqlite.
-				dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "INSERT OR IGNORE INTO questions (category, question, option1, option2) VALUES ('%s', '%s', '%s', '%s');", fileName, splitBuffer[0], splitBuffer[1], splitBuffer[2]);
-			}
+			dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "INSERT %s IGNORE INTO questions (category, question, option1, option2) VALUES ('%s', '%s', '%s', '%s');", useMySQL ? "" : "OR", fileName, splitBuffer[0], splitBuffer[1], splitBuffer[2]);
 			transaction.AddQuery(sqlBuffer);
 			parsedFiles++;
 		}
@@ -415,12 +410,7 @@ public void loadCategories() {
 		alCategories.Clear();
 	}
 	char sqlBuffer[128];
-	if(useMySQL) {
-		dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "SELECT DISTINCT `category` FROM questions;");
-	} else {
-		// TODO: test sqlite.
-		dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "SELECT DISTINCT `category` FROM questions;");
-	}
+	dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "SELECT DISTINCT `category` FROM questions;");
 	dbStats.Query(loadCategoriesCallback, sqlBuffer);
 }
 
@@ -497,7 +487,9 @@ public void parsePlayer(int client, DBResultSet result) {
 				}
 			}
 			int tempInt = result.FetchInt(1);
+			#if defined DEBUG
 			PrintToServer("%N - %s = %i", client, tempBuffer, tempInt);
+			#endif
 			alAskingQuestions[client].Push(tempInt);
 		}
 	}
@@ -512,7 +504,7 @@ public void parsePlayer(int client, DBResultSet result) {
 		if(nextQuestion != -1) {
 			requestQuestion(client, nextQuestion, null);
 		} else {
-			PrintToChat(client, "%s No unanswered questions found for the selected categories.");
+			PrintToChat(client, "%s No unanswered questions found for the selected categories.", chatPrefix);
 		}
 	}
 }
