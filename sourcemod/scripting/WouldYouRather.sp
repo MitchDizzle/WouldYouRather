@@ -118,18 +118,14 @@ public int mhMain(Menu menu, MenuAction action, int client, int param2) {
 		} else if(StrEqual(info, "newgame")) {
 			showNewGameMenu(client);
 		} else {
-			//showResetMenu(client);
+			showResetMenu(client);
 		}
 	} else if(action == MenuAction_End) {
 		delete menu;
 	}
 }
 
-public void showNewGameMenu(int client) {
-	Menu menu = new Menu(mhNewGame);
-	menu.SetTitle("Would You Rather...\n ");
-	menu.AddItem("play", "Play\n \nCategories:", alAskingCategories[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
-	
+public void generateCategoryItems(Menu menu,int client) {
 	if(alCategories != null && alCategories.Length > 0) {
 		char selection[12];
 		char description[72];
@@ -143,6 +139,22 @@ public void showNewGameMenu(int client) {
 			menu.AddItem(selection, description);
 		}
 	}
+}
+
+public void handleCategorySelection(int client, int selection) {
+	int index = alAskingCategories[client].FindValue(selection);
+	if(index > -1) {
+		alAskingCategories[client].Erase(index);
+	} else {
+		alAskingCategories[client].Push(selection);
+	}
+}
+
+public void showNewGameMenu(int client) {
+	Menu menu = new Menu(mhNewGame);
+	menu.SetTitle("Would You Rather...\n ");
+	menu.AddItem("play", "Play\n \nCategories:", alAskingCategories[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	generateCategoryItems(menu, client);
 	menu.Display(client, 0);
 }
 
@@ -154,12 +166,7 @@ public int mhNewGame(Menu menu, MenuAction action, int client, int param2) {
 			newGame(client);
 		} else {
 			int selection = StringToInt(info);
-			int index = alAskingCategories[client].FindValue(selection);
-			if(index > -1) {
-				alAskingCategories[client].Erase(index);
-			} else {
-				alAskingCategories[client].Push(selection);
-			}
+			handleCategorySelection(client, selection);
 			showNewGameMenu(client);
 		}
 	} else if(action == MenuAction_Cancel) {
@@ -167,6 +174,82 @@ public int mhNewGame(Menu menu, MenuAction action, int client, int param2) {
 	} else if(action == MenuAction_End) {
 		delete menu;
 	}
+}
+
+public void showResetMenu(int client) {
+	Menu menu = new Menu(mhReset);
+	menu.SetTitle("Reset Answered Questions\n ");
+	menu.AddItem("reset", "Reset\n \nCategories:", alAskingCategories[client].Length > 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	generateCategoryItems(menu, client);
+	menu.AddItem("spacer", "spacer", ITEMDRAW_SPACER);
+	menu.AddItem("resetall", "Reset All Categories");
+	menu.Display(client, 0);
+}
+
+public int mhReset(Menu menu, MenuAction action, int client, int param2) {
+	if(action == MenuAction_Select) {
+		char info[32];
+		menu.GetItem(param2, info, sizeof(info));
+		if(StrEqual(info, "reset")) {
+			resetSelectedCategories(client, false);
+		} else if(StrEqual(info, "resetall")) {
+			resetSelectedCategories(client, true);
+		} else {
+			int selection = StringToInt(info);
+			handleCategorySelection(client, selection);
+			showResetMenu(client);
+		}
+	} else if(action == MenuAction_Cancel) {
+		showMainMenu(client);
+	} else if(action == MenuAction_End) {
+		delete menu;
+	}
+}
+
+public void resetSelectedCategories(int client, bool all) {
+	if(alCategories != null && alCategories.Length > 0) {
+		int accountId = GetSteamAccountID(client);
+		char category[32];
+		char sqlBuffer[256];
+		int categoryId;
+		//Erase only the selected categories.
+		Transaction transaction = new Transaction();
+		int size = all ? alCategories.Length : alAskingCategories[client].Length;
+		for(int c = 0; c < size; c++) {
+			categoryId = alAskingCategories[client].Get(c);
+			alCategories.GetString(categoryId, category, sizeof(category));
+			dbStats.Format(sqlBuffer, sizeof(sqlBuffer), "DELETE FROM answers WHERE accountid='%i' AND questionid IN (SELECT questionid FROM questions WHERE category='%s');", accountId, category);
+			transaction.AddQuery(sqlBuffer, categoryId);
+		}
+		dbStats.Execute(transaction, resetCategoryTransactionCallback, threadFailure, GetClientUserId(client));
+	} else {
+		PrintToChat(client, "%s No categories selected.", chatPrefix); //This shouldn't happen.
+	}
+}
+
+public void resetCategoryTransactionCallback(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+	int client = GetClientOfUserId(data);
+	if(client <= 0) {
+		return;
+	}
+	char categoryFormat[255];
+	char category[255];
+	int categoryId;
+	int categoryCount;
+	for(int x = 0; x < numQueries; x++) {
+		categoryId = queryData[x];
+		alCategories.GetString(categoryId, category, sizeof(category));
+		if(categoryCount == 0) {
+			Format(categoryFormat, sizeof(categoryFormat), "%s", category);
+		} else if(categoryCount < 3) {
+			Format(categoryFormat, sizeof(categoryFormat), "%s%s%s", categoryFormat, (numQueries == 2) ? " and " : ", ", category);
+		}
+		categoryCount++;
+	}
+	if(categoryCount >= 3) {
+		Format(categoryFormat, sizeof(categoryFormat), "%s and %i other", categoryFormat, categoryCount-3);
+	}
+	PrintToChat(client, "%s %s answered categories reset.", chatPrefix, categoryFormat);
 }
 
 int plyShowingQuestion[MAXPLAYERS+1];
@@ -303,7 +386,6 @@ public void dbConnect(Database db, const char[] error, any data) {
 		char sDriver[32];
 		driver.GetIdentifier(sDriver, sizeof(sDriver));
 		useMySQL = StrEqual(sDriver, "mysql", false);
-		
 		Transaction transaction = new Transaction();
 		if(useMySQL) {
 			transaction.AddQuery("CREATE TABLE IF NOT EXISTS `players` (`accountid` int(32) NOT NULL, `name` varchar(128) NOT NULL, `steam64` varchar(64) NOT NULL, PRIMARY KEY (`accountid`));");
