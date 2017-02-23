@@ -36,7 +36,6 @@ public OnPluginStart() {
 	CreateConVar("sm_wouldyourather_version", PLUGIN_VERSION, "Version of Would You Rather plugin", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
 	cRandom = CreateConVar("sm_wouldyourather_random", "1", "Randomize the order of the questions before showing the client.");
 	//cSpacer = CreateConVar("sm_wouldyourather_menuspacer", "1", "0 For no menu spacer when being asked questions, 1 For menu spacers and the text 'Or...'");
-	//cDelete = CreateConVar("sm_wouldyourather_database_deletequestions", "0", "The questions in the database will be deleted and created new from the configs.");
 	AutoExecConfig(true, "WouldYouRather");
 
 	RegConsoleCmd("sm_wyr", Command_WouldYouRather);
